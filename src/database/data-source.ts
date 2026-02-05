@@ -3,13 +3,31 @@ import { config } from '../config';
 import { User } from '../models/User';
 import { Patient } from '../models/Patient';
 import { Diagnosis } from '../models/Diagnosis';
+import { Appointment } from '../models/Appointment';
+import { LabOrder } from '../models/LabOrder';
+import { LabResult } from '../models/LabResult';
+import { Prescription } from '../models/Prescription';
+import { Medication } from '../models/Medication';
+import { Notification } from '../models/Notification';
+import { AuditLog } from '../models/AuditLog';
 
 export const AppDataSource = new DataSource({
     type: 'postgres',
     url: config.nodeEnv === 'test' ? config.databaseTestUrl : config.databaseUrl,
     synchronize: false, // Never use synchronize in production
     logging: config.nodeEnv === 'development' ? ['query', 'error'] : ['error'],
-    entities: [User, Patient, Diagnosis],
+    entities: [
+        User,
+        Patient,
+        Diagnosis,
+        Appointment,
+        LabOrder,
+        LabResult,
+        Prescription,
+        Medication,
+        Notification,
+        AuditLog
+    ],
     migrations: ['src/database/migrations/*.ts'],
     subscribers: [],
     extra: {
