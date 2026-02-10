@@ -1,7 +1,11 @@
-import * as tf from '@tensorflow/tfjs';
+import * as tf from '@tensorflow/tfjs-node';
 import { config } from '../config';
 import { logger } from '../utils/logger';
-import path from 'path';
+import { mlConfig, getModelPath, getMetadataPath } from '../config/ml.config';
+import { ModelLoader } from './ml/model-loader';
+import { InferenceEngine } from './ml/inference-engine';
+import { FallbackMechanism } from './ml/fallback-mechanism';
+import { PredictionResult } from '../types/ml.types';
 
 export interface DiagnosisInput {
     symptoms: Array<{ name: string; category: string; severity?: string }>;
@@ -26,113 +30,109 @@ export interface Prediction {
 }
 
 export class AIService {
-    private model: tf.GraphModel | null = null;
-    private diseaseLabels: string[] = [];
+    private modelLoader: ModelLoader | null = null;
+    private inferenceEngine: InferenceEngine | null = null;
+    private fallbackMechanism: FallbackMechanism;
     private isModelLoaded: boolean = false;
 
     constructor() {
+        // Initialize fallback mechanism with rule-based predictor
+        this.fallbackMechanism = new FallbackMechanism(
+            null,
+            this.ruleBasedPredict.bind(this)
+        );
+        
         this.initializeModel();
     }
 
     private async initializeModel(): Promise<void> {
         try {
-            // In production, load the actual TensorFlow Lite model
-            // For now, we'll use a mock implementation
             logger.info('Initializing AI model...');
 
-            // Mock disease labels (in production, load from model metadata)
-            this.diseaseLabels = [
-                'Common Cold',
-                'Influenza',
-                'Malaria',
-                'Typhoid Fever',
-                'Pneumonia',
-                'Tuberculosis',
-                'Dengue Fever',
-                'Hypertension',
-                'Diabetes',
-                'Gastroenteritis',
-                'Urinary Tract Infection',
-                'Skin Infection',
-                'Respiratory Infection',
-                'Anemia',
-                'Dehydration'
-            ];
+            if (!mlConfig.features.useMLModel) {
+                logger.info('ML model disabled, using rule-based predictions only');
+                this.isModelLoaded = false;
+                return;
+            }
 
-            this.isModelLoaded = true;
-            logger.info('AI model initialized successfully');
+            // Load ML model
+            const modelPath = getModelPath();
+            const metadataPath = getMetadataPath();
+
+            this.modelLoader = new ModelLoader(modelPath, metadataPath);
+            
+            try {
+                await this.modelLoader.loadModel();
+                await this.modelLoader.loadMetadata();
+
+                // Create inference engine
+                this.inferenceEngine = new InferenceEngine(
+                    this.modelLoader.getModel(),
+                    this.modelLoader.getMetadata()
+                );
+
+                // Update fallback mechanism
+                this.fallbackMechanism.setMLPredictor(this.inferenceEngine);
+
+                this.isModelLoaded = true;
+                logger.info('ML model initialized successfully');
+            } catch (modelError) {
+                logger.error('Failed to load ML model, will use rule-based fallback:', modelError);
+                this.isModelLoaded = false;
+            }
         } catch (error) {
             logger.error('Failed to initialize AI model:', error);
-            throw error;
+            this.isModelLoaded = false;
         }
     }
 
     public async predictDisease(input: DiagnosisInput): Promise<Prediction[]> {
         try {
-            if (!this.isModelLoaded) {
-                await this.initializeModel();
+            const startTime = Date.now();
+
+            // Use fallback mechanism (handles both ML and rule-based)
+            const result: PredictionResult = await this.fallbackMechanism.predict(input);
+
+            const inferenceTime = Date.now() - startTime;
+            
+            logger.info(
+                `Prediction completed using ${result.method} method in ${inferenceTime}ms, ` +
+                `${result.predictions.length} diseases predicted`
+            );
+
+            // Log if fallback was used
+            if (result.method === 'rule-based' && result.fallbackReason) {
+                logger.warn(`Fallback reason: ${result.fallbackReason}`);
             }
 
-            // Preprocess input data
-            // const features = this.preprocessInput(input);
-
-            // In production, use actual model inference
-            // const predictions = await this.model.predict(features);
-
-            // Mock predictions for demonstration
-            const predictions = this.mockPredict(input);
-
-            // Filter by confidence threshold and get top predictions
-            const filteredPredictions = predictions
-                .filter(p => p.confidence >= config.aiModelConfidenceThreshold)
-                .sort((a, b) => b.confidence - a.confidence)
-                .slice(0, config.aiMaxPredictions);
-
-            // Add recommendations
-            const predictionsWithRecommendations = filteredPredictions.map(p => ({
-                ...p,
-                recommendations: this.getRecommendations(p.disease)
-            }));
-
-            logger.info(`AI prediction completed: ${predictionsWithRecommendations.length} diseases predicted`);
-
-            return predictionsWithRecommendations;
+            return result.predictions;
         } catch (error) {
             logger.error('Error during disease prediction:', error);
             throw error;
         }
     }
 
+    /**
+     * Rule-based prediction (fallback method)
+     */
+    private async ruleBasedPredict(input: DiagnosisInput): Promise<Prediction[]> {
+        logger.info('Using rule-based prediction');
+        
+        const predictions = this.mockPredict(input);
+
+        // Filter by confidence threshold and get top predictions
+        const filteredPredictions = predictions
+            .filter(p => p.confidence >= config.aiModelConfidenceThreshold)
+            .sort((a, b) => b.confidence - a.confidence)
+            .slice(0, config.aiMaxPredictions);
+
+        return filteredPredictions;
+    }
+
     /*
     private preprocessInput(input: DiagnosisInput): number[] {
-        // Convert input to feature vector
-        const features: number[] = [];
-
-        // Add vital signs (normalized)
-        features.push(
-            this.normalize(input.vitalSigns.temperature || 37, 35, 42),
-            this.normalize(input.vitalSigns.bloodPressureSystolic || 120, 80, 200),
-            this.normalize(input.vitalSigns.bloodPressureDiastolic || 80, 50, 120),
-            this.normalize(input.vitalSigns.heartRate || 75, 40, 180),
-            this.normalize(input.vitalSigns.respiratoryRate || 16, 10, 40),
-            this.normalize(input.vitalSigns.oxygenSaturation || 98, 80, 100)
-        );
-
-        // Add age (normalized)
-        features.push(this.normalize(input.age, 0, 100));
-
-        // Add gender (one-hot encoded)
-        features.push(input.gender === 'male' ? 1 : 0);
-        features.push(input.gender === 'female' ? 1 : 0);
-
-        // Add symptom features (simplified)
-        const symptomCategories = ['respiratory', 'digestive', 'neurological', 'cardiovascular', 'general'];
-        symptomCategories.forEach(category => {
-            const hasSymptom = input.symptoms.some(s => s.category.toLowerCase() === category);
-            features.push(hasSymptom ? 1 : 0);
-        });
-
-        return features;
+        // This is now handled by InferenceEngine
+        // Kept for reference
     }
 
     private normalize(value: number, min: number, max: number): number {
@@ -183,12 +183,17 @@ export class AIService {
             });
         }
 
-        // If no specific predictions, add general ones
         if (predictions.length === 0) {
             predictions.push({
                 disease: 'Common Cold',
                 confidence: 0.65,
-                icd10Code: 'J00'
+                icd10Code: 'J00',
+                recommendations: this.getRecommendations('Common Cold')
+            });
+        } else {
+            // Add recommendations to all predictions
+            predictions.forEach(p => {
+                p.recommendations = this.getRecommendations(p.disease);
             });
         }
 

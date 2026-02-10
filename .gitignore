@@ -10,8 +10,6 @@ build/
 *.js.map
 
 # Environment variables
-.env
-.env.local
 .env.*.local
 
 # Logs
@@ -19,7 +17,6 @@ logs/
 *.log
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -53,3 +50,4 @@ temp/
 
 # Redis dump
 dump.rdb
+config.bat

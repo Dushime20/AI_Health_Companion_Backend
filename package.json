@@ -4,9 +4,9 @@
   "description": "Backend API for AI Health Companion - Rural Clinic Disease Diagnosis System",
   "main": "dist/server.js",
   "scripts": {
-    "start": "node dist/server.js",
-    "dev": "nodemon --exec ts-node -r reflect-metadata src/server.ts",
-    "build": "tsc",
+    "start": "node init && node dist/server.js",
+    "dev": "node init && nodemon --exec ts-node -r reflect-metadata src/server.ts",
+    "build": "node init && tsc",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
     "lint": "eslint . --ext .ts",
@@ -29,6 +29,7 @@
   "license": "MIT",
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-node": "^4.22.0",
     "axios": "^1.13.4",
     "bcryptjs": "^2.4.3",
     "bull": "^4.12.0",

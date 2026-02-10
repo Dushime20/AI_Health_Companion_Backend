@@ -1,0 +1,4 @@
+# Place trained TensorFlow.js model files here:
+# - model.json
+# - group1-shard1of1.bin (or similar weight files)
+# - metadata.json
